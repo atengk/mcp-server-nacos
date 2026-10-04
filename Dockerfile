@@ -9,7 +9,7 @@ WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
 # 复制依赖配置并预缓存
-COPY package.json pnpm-lock.yaml* ./
+COPY package.json pnpm-lock.yaml* .npmrc* ./
 RUN pnpm install --frozen-lockfile || pnpm install
 
 # 复制源码并执行构建
