@@ -152,9 +152,53 @@
 }
 ```
 
+### 2. Cursor 配置 (Stdio 模式)
+
+在项目根目录 `.cursor/mcp.json` 或 Cursor 全局设置中配置：
+
+```json
+{
+  "mcpServers": {
+    "nacos": {
+      "command": "npx",
+      "args": ["-y", "@atengk/mcp-server-nacos"],
+      "env": {
+        "MCP_NACOS_SERVER_URL": "http://127.0.0.1:8848/nacos",
+        "MCP_NACOS_USERNAME": "nacos",
+        "MCP_NACOS_PASSWORD": "nacos"
+      }
+    }
+  }
+}
+```
+
 ---
 
-### 2. Docker Compose 独立服务部署 (SSE / 远程模式)
+### 3. VSCode (Cline / Roo Code) 配置 (Stdio 模式)
+
+在 VSCode 插件（如 Cline / Roo Code）的 MCP 设置中添加：
+
+```json
+{
+  "mcpServers": {
+    "nacos": {
+      "command": "npx",
+      "args": ["-y", "@atengk/mcp-server-nacos"],
+      "env": {
+        "MCP_NACOS_SERVER_URL": "http://127.0.0.1:8848/nacos",
+        "MCP_NACOS_USERNAME": "nacos",
+        "MCP_NACOS_PASSWORD": "nacos"
+      },
+      "disabled": false,
+      "autoApprove": []
+    }
+  }
+}
+```
+
+---
+
+### 4. Docker Compose 独立服务部署 (SSE / 远程网络模式)
 
 仓库内置了 [docker-compose.yml](./docker-compose.yml)，用于将 MCP Server 部署为独立容器服务并暴露 3000 端口：
 
@@ -168,6 +212,16 @@ docker compose up -d
 # 3. 查看运行日志
 docker compose logs -f
 ```
+
+---
+
+### 5. Dify / FastGPT 等多智能体平台接入 (SSE 模式)
+
+当通过 Docker Compose 或后台网络模式运行后，在各类大模型智能体平台（如 Dify、FastGPT）的 MCP 工具集成页面中添加自定义 MCP 服务端：
+
+- **集成类型**：`Server-Sent Events (SSE)`
+- **服务端端点 URL**：`http://<宿主机IP或域名>:3000/sse`
+- **消息回调 URL**：系统自动协商绑定 `http://<宿主机IP或域名>:3000/message`
 
 ---
 
@@ -217,6 +271,9 @@ docker compose logs -f
 - 📐 **架构决策记录 (ADR)**：
   - [ADR-0001: 采用 HTTP OpenAPI 全面替代客户端 gRPC 协议](./docs/adr/0001-http-openapi-over-grpc.md)
   - [ADR-0002: 实例注册默认采用持久化模式 (Persistent Instance)](./docs/adr/0002-persistent-instance-as-default.md)
+  - [ADR-0003: 采用 MCP Tool 分发层作为最高测试接缝 (Highest Testing Seam)](./docs/adr/0003-highest-testing-seam-at-mcp-tool-dispatch.md)
+  - [ADR-0004: 配置回滚基于 historyId 纯元数据原子触发](./docs/adr/0004-atomic-rollback-via-history-id.md)
+  - [ADR-0005: 采用 Stdio / SSE 双模传输架构兼顾桌面单机与容器远程](./docs/adr/0005-dual-transport-stdio-and-sse.md)
 - 📋 **GitHub 任务看板与规格书**：[GitHub Issues 看板](https://github.com/atengk/mcp-server-nacos/issues)
   - [Issue #1 (Spec 规格说明书)](https://github.com/atengk/mcp-server-nacos/issues/1)
   - [Issue #2 (Ticket 1: 核心底座与命名空间切片)](https://github.com/atengk/mcp-server-nacos/issues/2)

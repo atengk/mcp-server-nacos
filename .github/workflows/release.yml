@@ -34,10 +34,17 @@ jobs:
           node-version: 22
           cache: 'pnpm'
 
-      - name: 安装依赖与构建打包
-        run: |
-          pnpm install --frozen-lockfile || pnpm install
-          pnpm run build || true
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile || pnpm install
+
+      - name: 发版前置静态类型检查
+        run: pnpm run typecheck
+
+      - name: 发版前置全量自动化测试
+        run: pnpm test
+
+      - name: 编译构建
+        run: pnpm run build
 
       - name: 打包发版产物并生成 SHA-256 安全校验清单
         run: |
@@ -95,13 +102,13 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
           cache: 'pnpm'
 
-      - name: 安装依赖与编译打包
+      - name: 安装依赖与编译构建
         run: |
           pnpm install --frozen-lockfile || pnpm install
-          pnpm run build || true
+          pnpm run build
 
-      - name: 发布至 npmjs
-        run: npm publish --access public || true
+      - name: 发布至 npm 官方仓库
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -138,7 +145,8 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
 
       - name: 构建并推送多架构镜像 (amd64 / arm64)
         uses: docker/build-push-action@v5

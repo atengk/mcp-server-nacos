@@ -41,7 +41,7 @@ jobs:
             revert
 
   build-and-test:
-    name: 构建与类型检查
+    name: 构建与自动化测试
     runs-on: ubuntu-latest
 
     steps:
@@ -63,7 +63,10 @@ jobs:
         run: pnpm install --frozen-lockfile || pnpm install
 
       - name: 静态类型检查
-        run: pnpm run typecheck || true
+        run: pnpm run typecheck
+
+      - name: 自动化测试
+        run: pnpm test
 
       - name: 编译构建
-        run: pnpm run build || true
+        run: pnpm run build

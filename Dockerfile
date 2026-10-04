@@ -38,5 +38,8 @@ COPY --chown=node:node --from=builder /app/dist ./dist
 # 设置环境变量默认值
 ENV NODE_ENV=production
 
-# 容器启动入口 (Stdio 通信)
+# 声明服务监听端口 (用于远程 SSE 模式)
+EXPOSE 3000
+
+# 容器启动入口 (自适应支持 Stdio 交互模式与独立 SSE 网络模式)
 ENTRYPOINT ["node", "dist/index.js"]
