@@ -13,11 +13,13 @@ import {
   registerNamespaceTools,
   registerNamingTools,
 } from './mcp/tools.registry.js';
+import { registerNacosResources } from './mcp/resources.registry.js';
+import { registerNacosPrompts } from './mcp/prompts.registry.js';
 
 /**
  * 创建并配置 MCP Server 实例
  *
- * 注册各领域工具契约，暴露标准生命周期接口。
+ * 注册各领域工具契约、动态配置 Resources 与运维 Prompts，暴露标准生命周期接口。
  *
  * @param config 系统运行配置
  * @param nacosClient Nacos 客户端门面
@@ -49,6 +51,12 @@ export function createMcpServer(
 
   // 3. 注册服务发现与实例动态治理原子工具
   registerNamingTools(server, nacosClient);
+
+  // 4. 注册动态配置 Resources 协议
+  registerNacosResources(server, nacosClient);
+
+  // 5. 注册交互式运维 Prompts 模板
+  registerNacosPrompts(server, nacosClient);
 
   return server;
 }
