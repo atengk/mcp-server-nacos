@@ -19,6 +19,8 @@ import type {
   NacosServiceDetail,
 } from '../types/index.js';
 import type { HttpClient } from './http.client.js';
+import { normalizeNamespaceId } from '../utils/normalizer.js';
+import { resolveConfigType } from '../utils/mime.util.js';
 
 export class NacosClient {
   public readonly config: NacosServerConfig;
@@ -185,9 +187,9 @@ export class NacosClient {
     const formParams = new URLSearchParams();
     formParams.append('dataId', params.dataId);
     formParams.append('group', params.group || 'DEFAULT_GROUP');
-    formParams.append('tenant', params.tenant ?? '');
+    formParams.append('tenant', normalizeNamespaceId(params.tenant));
     formParams.append('content', params.content);
-    formParams.append('type', params.type || 'text');
+    formParams.append('type', resolveConfigType(params.dataId, params.type));
 
     if (params.desc) {
       formParams.append('desc', params.desc);
@@ -413,12 +415,13 @@ export class NacosClient {
       throw new Error(`历史版本快照内容为空，无法执行回滚: historyId=${params.historyId}`);
     }
 
-    // 2. 原子发布覆盖当前运行配置
+    // 2. 原子发布覆盖当前运行配置，并自动保留/推导格式类型
     await this.publishConfig({
       dataId: params.dataId,
       group,
       tenant,
       content: snapshot.content,
+      type: resolveConfigType(params.dataId),
       appName: snapshot.appName,
       desc: `Rollback to history snapshot #${params.historyId}`,
     });
@@ -443,7 +446,7 @@ export class NacosClient {
       {
         params: {
           groupName: params.groupName || 'DEFAULT_GROUP',
-          namespaceId: params.namespaceId ?? '',
+          namespaceId: normalizeNamespaceId(params.namespaceId),
           pageNo: params.pageNo || 1,
           pageSize: params.pageSize || 20,
         },
@@ -469,12 +472,13 @@ export class NacosClient {
     groupName = 'DEFAULT_GROUP',
     namespaceId = ''
   ): Promise<NacosServiceDetail> {
+    const normalizedNs = normalizeNamespaceId(namespaceId);
     try {
       const response = await this.httpClient.get<NacosServiceDetail>('/v1/ns/service', {
         params: {
           serviceName,
           groupName,
-          namespaceId,
+          namespaceId: normalizedNs,
         },
       });
 
@@ -482,7 +486,7 @@ export class NacosClient {
     } catch (err: any) {
       if (err?.response?.status === 404 || err?.status === 404) {
         throw new Error(
-          `微服务不存在: serviceName=${serviceName}, group=${groupName}, namespaceId=${namespaceId || 'public'}`
+          `微服务不存在: serviceName=${serviceName}, group=${groupName}, namespaceId=${normalizedNs || 'public'}`
         );
       }
       throw err;
@@ -508,7 +512,7 @@ export class NacosClient {
         params: {
           serviceName: params.serviceName,
           groupName: params.groupName || 'DEFAULT_GROUP',
-          namespaceId: params.namespaceId ?? '',
+          namespaceId: normalizeNamespaceId(params.namespaceId),
           healthyOnly: params.healthyOnly ?? false,
           clusters: params.clusters,
         },
@@ -545,7 +549,7 @@ export class NacosClient {
     const formParams = new URLSearchParams();
     formParams.append('serviceName', params.serviceName);
     formParams.append('groupName', params.groupName || 'DEFAULT_GROUP');
-    formParams.append('namespaceId', params.namespaceId ?? '');
+    formParams.append('namespaceId', normalizeNamespaceId(params.namespaceId));
     formParams.append('ip', params.ip);
     formParams.append('port', String(params.port));
     formParams.append('weight', String(params.weight ?? 1.0));
@@ -587,7 +591,7 @@ export class NacosClient {
       params: {
         serviceName: params.serviceName,
         groupName: params.groupName || 'DEFAULT_GROUP',
-        namespaceId: params.namespaceId ?? '',
+        namespaceId: normalizeNamespaceId(params.namespaceId),
         ip: params.ip,
         port: params.port,
         clusterName: params.clusterName || 'DEFAULT',
@@ -619,7 +623,7 @@ export class NacosClient {
     const formParams = new URLSearchParams();
     formParams.append('serviceName', params.serviceName);
     formParams.append('groupName', params.groupName || 'DEFAULT_GROUP');
-    formParams.append('namespaceId', params.namespaceId ?? '');
+    formParams.append('namespaceId', normalizeNamespaceId(params.namespaceId));
     formParams.append('ip', params.ip);
     formParams.append('port', String(params.port));
     formParams.append('clusterName', params.clusterName || 'DEFAULT');

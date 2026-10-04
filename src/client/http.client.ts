@@ -51,10 +51,14 @@ export class HttpClient {
         if (this.authManager.isAuthEnabled()) {
           const token = await this.authManager.getAccessToken();
           if (token) {
-            reqConfig.params = {
-              ...reqConfig.params,
-              accessToken: token,
-            };
+            if (reqConfig.params instanceof URLSearchParams) {
+              reqConfig.params.set('accessToken', token);
+            } else {
+              reqConfig.params = {
+                ...reqConfig.params,
+                accessToken: token,
+              };
+            }
           }
         }
         return reqConfig;
@@ -79,10 +83,14 @@ export class HttpClient {
           try {
             const freshToken = await this.authManager.login(true);
             if (freshToken) {
-              originalRequest.params = {
-                ...originalRequest.params,
-                accessToken: freshToken,
-              };
+              if (originalRequest.params instanceof URLSearchParams) {
+                originalRequest.params.set('accessToken', freshToken);
+              } else {
+                originalRequest.params = {
+                  ...originalRequest.params,
+                  accessToken: freshToken,
+                };
+              }
             }
             return this.axiosInstance(originalRequest);
           } catch (loginError) {

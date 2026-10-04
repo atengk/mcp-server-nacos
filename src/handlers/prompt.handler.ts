@@ -10,6 +10,7 @@
 import type { GetPromptResult } from '@modelcontextprotocol/sdk/types.js';
 import type { NacosClient } from '../client/nacos.client.js';
 import { generateUnifiedDiff } from '../utils/diff.util.js';
+import { normalizeNamespaceId } from '../utils/normalizer.js';
 
 export interface ServiceInspectionInput {
   namespaceId?: string;
@@ -38,7 +39,7 @@ export class PromptHandler {
     client: NacosClient,
     input: ServiceInspectionInput = {}
   ): Promise<GetPromptResult> {
-    const namespaceId = input.namespaceId ?? '';
+    const namespaceId = normalizeNamespaceId(input.namespaceId);
     const groupName = input.groupName || 'DEFAULT_GROUP';
 
     // 1. 获取微服务全量列表
@@ -141,11 +142,7 @@ export class PromptHandler {
     client: NacosClient,
     input: ConfigDriftCheckInput
   ): Promise<GetPromptResult> {
-    const rawNamespace = input.namespaceId ?? '';
-    const tenant =
-      rawNamespace.toLowerCase() === 'public' || rawNamespace === ''
-        ? ''
-        : rawNamespace;
+    const tenant = normalizeNamespaceId(input.namespaceId);
     const group = input.group || 'DEFAULT_GROUP';
     const dataId = input.dataId.trim();
 
@@ -153,7 +150,7 @@ export class PromptHandler {
     const currentContent = await client.getConfig(dataId, group, tenant);
     if (currentContent === null || currentContent === undefined) {
       throw new Error(
-        `当前运行配置集不存在: dataId=${dataId}, group=${group}, namespaceId=${rawNamespace || 'public'}`
+        `当前运行配置集不存在: dataId=${dataId}, group=${group}, namespaceId=${tenant || 'public'}`
       );
     }
 
@@ -234,7 +231,7 @@ export class PromptHandler {
       '## 1. 配置寻址信息',
       `- **配置集 ID (Data ID)**: \`${dataId}\``,
       `- **配置分组 (Group)**: \`${group}\``,
-      `- **命名空间 (Tenant)**: \`${rawNamespace || 'public'}\``,
+      `- **命名空间 (Tenant)**: \`${tenant || 'public'}\``,
       `- **对比历史快照 ID**: \`${historyIdLabel}\``,
       `- **快照修改时间**: ${historySnapshot?.lastModifiedTime || '未知'}`,
       `- **快照操作人**: ${historySnapshot?.srcUser || '未知'}`,
@@ -252,7 +249,7 @@ export class PromptHandler {
       '   - 若评估结果安全，确认放行上线；',
       '   - 若存在风险或配置破坏，建议使用 `nacos_rollback_config` 原子工具回滚至快照版本：',
       `     \`\`\`json`,
-      `     { "dataId": "${dataId}", "group": "${group}", "namespaceId": "${rawNamespace}", "historyId": "${historySnapshot?.id || ''}" }`,
+      `     { "dataId": "${dataId}", "group": "${group}", "namespaceId": "${tenant}", "historyId": "${historySnapshot?.id || ''}" }`,
       `     \`\`\``,
     ].join('\n');
 

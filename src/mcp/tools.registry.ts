@@ -9,10 +9,46 @@
 
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { NacosClient } from '../client/nacos.client.js';
 import { NamespaceHandler } from '../handlers/namespace.handler.js';
 import { ConfigHandler } from '../handlers/config.handler.js';
 import { NamingHandler } from '../handlers/naming.handler.js';
+
+/**
+ * 统一执行工具业务逻辑并收敛结构化异常 (DRY 辅助函数)
+ *
+ * @param actionName 操作业务名称（如 "命名空间列表查询"）
+ * @param handler 业务执行回调
+ * @return MCP 统一响应格式
+ */
+async function safeToolCall(
+  actionName: string,
+  handler: () => Promise<string>
+): Promise<CallToolResult> {
+  try {
+    const text = await handler();
+    return {
+      content: [
+        {
+          type: 'text',
+          text,
+        },
+      ],
+    };
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    return {
+      isError: true,
+      content: [
+        {
+          type: 'text',
+          text: `[${actionName}失败]: ${errorMsg}`,
+        },
+      ],
+    };
+  }
+}
 
 /**
  * 注册命名空间领域相关的 MCP 工具
@@ -29,30 +65,7 @@ export function registerNamespaceTools(
     'nacos_list_namespaces',
     '查询 Nacos 集群所有命名空间列表及隔离元数据',
     {},
-    async () => {
-      try {
-        const text = await NamespaceHandler.listNamespaces(nacosClient);
-        return {
-          content: [
-            {
-              type: 'text',
-              text,
-            },
-          ],
-        };
-      } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        return {
-          isError: true,
-          content: [
-            {
-              type: 'text',
-              text: `[命名空间列表查询失败]: ${errorMsg}`,
-            },
-          ],
-        };
-      }
-    }
+    () => safeToolCall('命名空间列表查询', () => NamespaceHandler.listNamespaces(nacosClient))
   );
 
   // 2. nacos_create_namespace: 创建自定义命名空间
@@ -66,30 +79,8 @@ export function registerNamespaceTools(
       namespaceName: z.string().describe('命名空间显示名称'),
       namespaceDesc: z.string().optional().describe('命名空间业务用途描述信息'),
     },
-    async (args) => {
-      try {
-        const text = await NamespaceHandler.createNamespace(nacosClient, args);
-        return {
-          content: [
-            {
-              type: 'text',
-              text,
-            },
-          ],
-        };
-      } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        return {
-          isError: true,
-          content: [
-            {
-              type: 'text',
-              text: `[命名空间创建失败]: ${errorMsg}`,
-            },
-          ],
-        };
-      }
-    }
+    (args) =>
+      safeToolCall('命名空间创建', () => NamespaceHandler.createNamespace(nacosClient, args))
   );
 
   // 3. nacos_delete_namespace: 删除指定命名空间
@@ -99,35 +90,13 @@ export function registerNamespaceTools(
     {
       namespaceId: z.string().describe('待删除的命名空间 Tenant ID'),
     },
-    async (args) => {
-      try {
-        const text = await NamespaceHandler.deleteNamespace(nacosClient, args);
-        return {
-          content: [
-            {
-              type: 'text',
-              text,
-            },
-          ],
-        };
-      } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        return {
-          isError: true,
-          content: [
-            {
-              type: 'text',
-              text: `[命名空间删除失败]: ${errorMsg}`,
-            },
-          ],
-        };
-      }
-    }
+    (args) =>
+      safeToolCall('命名空间删除', () => NamespaceHandler.deleteNamespace(nacosClient, args))
   );
 }
 
 /**
- * 注册配置管理领域的 MCP 原子工具
+ * 注册配置中心领域相关的 MCP 工具
  *
  * @param server MCP 服务端实例
  * @param nacosClient Nacos 客户端门面
@@ -136,10 +105,10 @@ export function registerConfigTools(
   server: McpServer,
   nacosClient: NacosClient
 ): void {
-  // 1. nacos_get_config: 查询配置全文（支持按行切片和大文本防爆）
+  // 1. nacos_get_config: 读取配置项内容
   server.tool(
     'nacos_get_config',
-    '根据配置集 ID (Data ID) 和配置分组 (Group) 查询配置全文（支持大文本自动截断保护与 startLine/endLine 按行切片读取）',
+    '获取 Nacos 配置项全文内容，支持超长文本智能截断与按行切片精准读取',
     {
       dataId: z.string().describe('配置集 ID (Data ID)'),
       group: z
@@ -156,46 +125,23 @@ export function registerConfigTools(
         .int()
         .positive()
         .optional()
-        .describe('按行切片读取的起始行号（1-indexed，包含）'),
+        .describe('切片起始行号（从 1 开始，用于大文本分块读取）'),
       endLine: z
         .number()
         .int()
         .positive()
         .optional()
-        .describe('按行切片读取的结束行号（1-indexed，包含）'),
+        .describe('切片结束行号（闭区间，必须大于等于起始行）'),
     },
-    async (args) => {
-      try {
-        const text = await ConfigHandler.getConfig(nacosClient, args);
-        return {
-          content: [
-            {
-              type: 'text',
-              text,
-            },
-          ],
-        };
-      } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        return {
-          isError: true,
-          content: [
-            {
-              type: 'text',
-              text: `[配置获取失败]: ${errorMsg}`,
-            },
-          ],
-        };
-      }
-    }
+    (args) => safeToolCall('配置读取', () => ConfigHandler.getConfig(nacosClient, args))
   );
 
-  // 2. nacos_publish_config: 发布/更新配置（内置语法安全守卫）
+  // 2. nacos_publish_config: 发布或更新配置项
   server.tool(
     'nacos_publish_config',
-    '在 Nacos 中创建或更新配置内容（客户端内置 JSON/YAML 语法强安全守卫拦截）',
+    '发布或更新 Nacos 配置项内容（内置 JSON/YAML 语法格式合法性前置拦截校验）',
     {
-      dataId: z.string().describe('配置集 ID (Data ID)'),
+      dataId: z.string().describe('目标配置集 ID (Data ID)'),
       group: z
         .string()
         .optional()
@@ -205,41 +151,19 @@ export function registerConfigTools(
         .string()
         .optional()
         .describe('命名空间 Tenant ID，留空或 public 为公共空间'),
-      content: z.string().describe('配置项全文内容'),
+      content: z.string().describe('待发布的配置内容全文'),
       type: z
-        .string()
+        .enum(['text', 'json', 'xml', 'yaml', 'html', 'properties', 'toml'])
         .optional()
-        .describe('配置格式类型（yaml, json, properties, text, xml 等）'),
-      desc: z.string().optional().describe('配置项业务用途描述'),
-      appName: z.string().optional().describe('归属应用服务名'),
+        .describe('配置格式类型（支持 text/json/xml/yaml/html/properties/toml）'),
+      desc: z.string().optional().describe('配置描述信息'),
+      appName: z.string().optional().describe('所属应用名称 (App Name)'),
     },
-    async (args) => {
-      try {
-        const text = await ConfigHandler.publishConfig(nacosClient, args);
-        return {
-          content: [
-            {
-              type: 'text',
-              text,
-            },
-          ],
-        };
-      } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        return {
-          isError: true,
-          content: [
-            {
-              type: 'text',
-              text: `[配置发布失败]: ${errorMsg}`,
-            },
-          ],
-        };
-      }
-    }
+    (args) =>
+      safeToolCall('配置发布', () => ConfigHandler.publishConfig(nacosClient, args))
   );
 
-  // 3. nacos_delete_config: 删除指定配置
+  // 3. nacos_delete_config: 删除配置项
   server.tool(
     'nacos_delete_config',
     '删除 Nacos 中指定的配置项',
@@ -255,79 +179,39 @@ export function registerConfigTools(
         .optional()
         .describe('命名空间 Tenant ID，留空或 public 为公共空间'),
     },
-    async (args) => {
-      try {
-        const text = await ConfigHandler.deleteConfig(nacosClient, args);
-        return {
-          content: [
-            {
-              type: 'text',
-              text,
-            },
-          ],
-        };
-      } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        return {
-          isError: true,
-          content: [
-            {
-              type: 'text',
-              text: `[配置删除失败]: ${errorMsg}`,
-            },
-          ],
-        };
-      }
-    }
+    (args) => safeToolCall('配置删除', () => ConfigHandler.deleteConfig(nacosClient, args))
   );
 
-  // 4. nacos_list_configs: 分页模糊搜索配置列表
+  // 4. nacos_list_configs: 分页模糊搜索配置集
   server.tool(
     'nacos_list_configs',
-    '分页模糊搜索 Nacos 配置项列表',
+    '分页模糊搜索配置集列表（支持按 Data ID 或 Group 模糊匹配）',
     {
-      dataId: z.string().optional().describe('配置集 ID 模糊检索关键词'),
-      group: z.string().optional().describe('配置分组模糊检索关键词'),
-      appName: z.string().optional().describe('归属应用名称'),
+      dataId: z.string().optional().describe('配置集 ID 模糊匹配关键字'),
+      group: z.string().optional().describe('配置分组模糊匹配关键字'),
+      appName: z.string().optional().describe('应用名称模糊匹配关键字'),
       namespaceId: z
         .string()
         .optional()
         .describe('命名空间 Tenant ID，留空或 public 为公共空间'),
-      pageNo: z.number().int().positive().optional().default(1).describe('查询页码（从 1 开始）'),
-      pageSize: z.number().int().positive().optional().default(20).describe('每页条数'),
+      pageNo: z.number().int().positive().optional().describe('分页查询页码，默认 1'),
+      pageSize: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe('每页查询数量，默认 20，上限 100'),
     },
-    async (args) => {
-      try {
-        const text = await ConfigHandler.listConfigs(nacosClient, args);
-        return {
-          content: [
-            {
-              type: 'text',
-              text,
-            },
-          ],
-        };
-      } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        return {
-          isError: true,
-          content: [
-            {
-              type: 'text',
-              text: `[配置搜索失败]: ${errorMsg}`,
-            },
-          ],
-        };
-      }
-    }
+    (args) =>
+      safeToolCall('配置列表检索', () => ConfigHandler.listConfigs(nacosClient, args))
   );
 
-  // 5. nacos_get_config_history: 查询配置历史修订版本清单
+  // 5. nacos_get_config_history: 查询历史版本清单
   server.tool(
     'nacos_get_config_history',
-    '查询指定配置的历史修订版本记录列表（含操作人、变更时间与历史快照 ID）',
+    '分页查询特定配置项的历史修改版本清单与审计快照元数据',
     {
-      dataId: z.string().describe('配置集 ID (Data ID)'),
+      dataId: z.string().describe('目标配置集 ID (Data ID)'),
       group: z
         .string()
         .optional()
@@ -337,33 +221,18 @@ export function registerConfigTools(
         .string()
         .optional()
         .describe('命名空间 Tenant ID，留空或 public 为公共空间'),
-      pageNo: z.number().int().positive().optional().default(1).describe('查询页码（从 1 开始）'),
-      pageSize: z.number().int().positive().optional().default(20).describe('每页条数'),
+      pageNo: z.number().int().positive().optional().describe('分页查询页码，默认 1'),
+      pageSize: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe('每页查询数量，默认 20，上限 100'),
     },
-    async (args) => {
-      try {
-        const text = await ConfigHandler.getConfigHistory(nacosClient, args);
-        return {
-          content: [
-            {
-              type: 'text',
-              text,
-            },
-          ],
-        };
-      } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        return {
-          isError: true,
-          content: [
-            {
-              type: 'text',
-              text: `[配置历史查询失败]: ${errorMsg}`,
-            },
-          ],
-        };
-      }
-    }
+    (args) =>
+      safeToolCall('配置历史查询', () =>
+        ConfigHandler.getConfigHistory(nacosClient, args)
+      )
   );
 
   // 6. nacos_rollback_config: 原子化一键回滚配置
@@ -385,30 +254,8 @@ export function registerConfigTools(
         .union([z.string(), z.number()])
         .describe('目标历史快照唯一标识符 (historyId / nid)'),
     },
-    async (args) => {
-      try {
-        const text = await ConfigHandler.rollbackConfig(nacosClient, args);
-        return {
-          content: [
-            {
-              type: 'text',
-              text,
-            },
-          ],
-        };
-      } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        return {
-          isError: true,
-          content: [
-            {
-              type: 'text',
-              text: `[配置回滚失败]: ${errorMsg}`,
-            },
-          ],
-        };
-      }
-    }
+    (args) =>
+      safeToolCall('配置回滚', () => ConfigHandler.rollbackConfig(nacosClient, args))
   );
 }
 
@@ -443,30 +290,8 @@ export function registerNamingTools(
         .optional()
         .describe('每页查询数量，默认 20，上限 100'),
     },
-    async (args) => {
-      try {
-        const text = await NamingHandler.listServices(nacosClient, args);
-        return {
-          content: [
-            {
-              type: 'text',
-              text,
-            },
-          ],
-        };
-      } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        return {
-          isError: true,
-          content: [
-            {
-              type: 'text',
-              text: `[服务列表查询失败]: ${errorMsg}`,
-            },
-          ],
-        };
-      }
-    }
+    (args) =>
+      safeToolCall('服务列表查询', () => NamingHandler.listServices(nacosClient, args))
   );
 
   // 2. nacos_get_service: 获取微服务详情与保护阈值
@@ -484,30 +309,8 @@ export function registerNamingTools(
         .optional()
         .describe('命名空间 Tenant ID，留空或 public 为公共空间'),
     },
-    async (args) => {
-      try {
-        const text = await NamingHandler.getService(nacosClient, args);
-        return {
-          content: [
-            {
-              type: 'text',
-              text,
-            },
-          ],
-        };
-      } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        return {
-          isError: true,
-          content: [
-            {
-              type: 'text',
-              text: `[微服务详情查询失败]: ${errorMsg}`,
-            },
-          ],
-        };
-      }
-    }
+    (args) =>
+      safeToolCall('微服务详情查询', () => NamingHandler.getService(nacosClient, args))
   );
 
   // 3. nacos_list_instances: 查询注册实例列表
@@ -533,30 +336,10 @@ export function registerNamingTools(
         .optional()
         .describe('集群名称列表（多个以逗号分割，如 DEFAULT）'),
     },
-    async (args) => {
-      try {
-        const text = await NamingHandler.listInstances(nacosClient, args);
-        return {
-          content: [
-            {
-              type: 'text',
-              text,
-            },
-          ],
-        };
-      } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        return {
-          isError: true,
-          content: [
-            {
-              type: 'text',
-              text: `[服务实例查询失败]: ${errorMsg}`,
-            },
-          ],
-        };
-      }
-    }
+    (args) =>
+      safeToolCall('服务实例查询', () =>
+        NamingHandler.listInstances(nacosClient, args)
+      )
   );
 
   // 4. nacos_register_instance: 注册实例（默认持久化）
@@ -602,30 +385,10 @@ export function registerNamingTools(
         .optional()
         .describe('实例自定义扩展元数据键值对 (Key-Value)'),
     },
-    async (args) => {
-      try {
-        const text = await NamingHandler.registerInstance(nacosClient, args);
-        return {
-          content: [
-            {
-              type: 'text',
-              text,
-            },
-          ],
-        };
-      } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        return {
-          isError: true,
-          content: [
-            {
-              type: 'text',
-              text: `[服务实例注册失败]: ${errorMsg}`,
-            },
-          ],
-        };
-      }
-    }
+    (args) =>
+      safeToolCall('服务实例注册', () =>
+        NamingHandler.registerInstance(nacosClient, args)
+      )
   );
 
   // 5. nacos_deregister_instance: 手动注销实例
@@ -653,30 +416,10 @@ export function registerNamingTools(
         .optional()
         .describe('实例是否为临时节点（持久化实例注销传 false 或留空）'),
     },
-    async (args) => {
-      try {
-        const text = await NamingHandler.deregisterInstance(nacosClient, args);
-        return {
-          content: [
-            {
-              type: 'text',
-              text,
-            },
-          ],
-        };
-      } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        return {
-          isError: true,
-          content: [
-            {
-              type: 'text',
-              text: `[服务实例注销失败]: ${errorMsg}`,
-            },
-          ],
-        };
-      }
-    }
+    (args) =>
+      safeToolCall('服务实例注销', () =>
+        NamingHandler.deregisterInstance(nacosClient, args)
+      )
   );
 
   // 6. nacos_update_instance: 动态调节权重与上下线
@@ -718,30 +461,10 @@ export function registerNamingTools(
         .optional()
         .describe('实例是否为临时节点'),
     },
-    async (args) => {
-      try {
-        const text = await NamingHandler.updateInstance(nacosClient, args);
-        return {
-          content: [
-            {
-              type: 'text',
-              text,
-            },
-          ],
-        };
-      } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        return {
-          isError: true,
-          content: [
-            {
-              type: 'text',
-              text: `[服务实例更新失败]: ${errorMsg}`,
-            },
-          ],
-        };
-      }
-    }
+    (args) =>
+      safeToolCall('服务实例更新', () =>
+        NamingHandler.updateInstance(nacosClient, args)
+      )
   );
 
   // 7. nacos_get_server_status: 探测集群节点状态
@@ -749,32 +472,9 @@ export function registerNamingTools(
     'nacos_get_server_status',
     '探测 Nacos 集群各节点运行状态、版本与探针健康度',
     {},
-    async () => {
-      try {
-        const text = await NamingHandler.getServerStatus(nacosClient);
-        return {
-          content: [
-            {
-              type: 'text',
-              text,
-            },
-          ],
-        };
-      } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        return {
-          isError: true,
-          content: [
-            {
-              type: 'text',
-              text: `[集群状态探测失败]: ${errorMsg}`,
-            },
-          ],
-        };
-      }
-    }
+    () =>
+      safeToolCall('集群状态探测', () =>
+        NamingHandler.getServerStatus(nacosClient)
+      )
   );
 }
-
-
-

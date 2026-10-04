@@ -12,6 +12,7 @@ import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NacosClient } from '../client/nacos.client.js';
 import { resolveConfigMimeType } from '../utils/mime.util.js';
+import { normalizeNamespaceId } from '../utils/normalizer.js';
 
 /**
  * 注册 Nacos 动态配置相关的 MCP Resources
@@ -44,10 +45,7 @@ export function registerNacosResources(
       const dataId = String(variables.dataId || '');
 
       // 1. 规范化命名空间租户标识（public 或空串统一映射为 Nacos 默认公共空间 tenant=""）
-      const tenant =
-        rawNamespace.toLowerCase() === 'public' || rawNamespace === ''
-          ? ''
-          : rawNamespace;
+      const tenant = normalizeNamespaceId(rawNamespace);
 
       // 2. 调用底层 Nacos 客户端读取配置内容
       const content = await nacosClient.getConfig(dataId, group, tenant);

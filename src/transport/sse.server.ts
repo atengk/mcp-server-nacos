@@ -55,80 +55,97 @@ export async function startSseServer(
   const sessions = new Map<string, SseSession>();
 
   const httpServer = http.createServer(async (req, res) => {
-    const host = req.headers.host || `127.0.0.1:${config.port || 3000}`;
-    const url = new URL(req.url || '/', `http://${host}`);
-    const pathname = url.pathname;
+    req.on('error', () => {});
+    res.on('error', () => {});
 
-    // 1. 处理 OPTIONS 跨域预检请求
-    if (req.method === 'OPTIONS') {
-      setCorsHeaders(res);
-      res.writeHead(204);
-      res.end();
-      return;
-    }
+    try {
+      const host = req.headers.host || `127.0.0.1:${config.port || 3000}`;
+      const url = new URL(req.url || '/', `http://${host}`);
+      const pathname = url.pathname;
 
-    // 2. 健康检查与状态探针端点: GET /health 或 GET /
-    if (req.method === 'GET' && (pathname === '/health' || pathname === '/')) {
-      setCorsHeaders(res);
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(
-        JSON.stringify({
-          status: 'UP',
-          service: 'mcp-server-nacos',
-          version: '0.1.0',
-          transport: 'sse',
-          activeSessions: sessions.size,
-          nacosServer: config.serverUrl,
-        })
-      );
-      return;
-    }
+      // 1. 处理 OPTIONS 跨域预检请求
+      if (req.method === 'OPTIONS') {
+        setCorsHeaders(res);
+        res.writeHead(204);
+        res.end();
+        return;
+      }
 
-    // 3. 建立 SSE 流式连接端点: GET /sse
-    if (req.method === 'GET' && pathname === '/sse') {
-      setCorsHeaders(res);
-
-      const server = createMcpServer(config, nacosClient);
-      const transport = new SSEServerTransport('/message', res);
-
-      const session: SseSession = { transport, server };
-      sessions.set(transport.sessionId, session);
-
-      transport.onclose = () => {
-        sessions.delete(transport.sessionId);
-      };
-
-      // connect 内部会自动调用 transport.start()
-      await server.connect(transport);
-      return;
-    }
-
-    // 4. 接收客户端发送指令与请求端点: POST /message
-    if (req.method === 'POST' && pathname === '/message') {
-      setCorsHeaders(res);
-
-      const sessionId = url.searchParams.get('sessionId');
-      const session = sessionId ? sessions.get(sessionId) : undefined;
-
-      if (!session) {
-        res.writeHead(404, { 'Content-Type': 'application/json' });
+      // 2. 健康检查与状态探针端点: GET /health 或 GET /
+      if (req.method === 'GET' && (pathname === '/health' || pathname === '/')) {
+        setCorsHeaders(res);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(
           JSON.stringify({
-            error: 'Session not found or expired',
-            sessionId: sessionId || null,
+            status: 'UP',
+            service: 'mcp-server-nacos',
+            version: '0.1.0',
+            transport: 'sse',
+            activeSessions: sessions.size,
+            nacosServer: config.serverUrl,
           })
         );
         return;
       }
 
-      await session.transport.handlePostMessage(req, res);
-      return;
-    }
+      // 3. 建立 SSE 流式连接端点: GET /sse
+      if (req.method === 'GET' && pathname === '/sse') {
+        setCorsHeaders(res);
 
-    // 5. 兜底 404 路由
-    setCorsHeaders(res);
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: `Not Found: ${req.method} ${pathname}` }));
+        const server = createMcpServer(config, nacosClient);
+        const transport = new SSEServerTransport('/message', res);
+
+        const session: SseSession = { transport, server };
+        sessions.set(transport.sessionId, session);
+
+        transport.onclose = () => {
+          sessions.delete(transport.sessionId);
+        };
+
+        // connect 内部会自动调用 transport.start()
+        await server.connect(transport);
+        return;
+      }
+
+      // 4. 接收客户端发送指令与请求端点: POST /message
+      if (req.method === 'POST' && pathname === '/message') {
+        setCorsHeaders(res);
+
+        const sessionId = url.searchParams.get('sessionId');
+        const session = sessionId ? sessions.get(sessionId) : undefined;
+
+        if (!session) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              error: 'Session not found or expired',
+              sessionId: sessionId || null,
+            })
+          );
+          return;
+        }
+
+        await session.transport.handlePostMessage(req, res);
+        return;
+      }
+
+      // 5. 兜底 404 路由
+      setCorsHeaders(res);
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: `Not Found: ${req.method} ${pathname}` }));
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      if (!res.headersSent) {
+        setCorsHeaders(res);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            error: 'Internal SSE server error',
+            message: errorMsg,
+          })
+        );
+      }
+    }
   });
 
   const targetPort = config.port ?? 3000;

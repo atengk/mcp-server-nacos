@@ -42,3 +42,42 @@ export function resolveConfigMimeType(dataId: string): string {
   const ext = dataId.slice(lastDot + 1).toLowerCase().trim();
   return MIME_MAP[ext] || 'text/plain';
 }
+
+const CONFIG_TYPE_MAP: Record<string, string> = {
+  yaml: 'yaml',
+  yml: 'yaml',
+  json: 'json',
+  xml: 'xml',
+  properties: 'properties',
+  html: 'html',
+  htm: 'html',
+  toml: 'toml',
+  txt: 'text',
+  text: 'text',
+};
+
+/**
+ * 根据 Data ID 后缀或显式声明推导 Nacos 规范配置格式类型 (Type)
+ *
+ * @param dataId 配置集标识（如 application.yaml）
+ * @param explicitType 外部显式声明的类型（若存在且非空则优先使用）
+ * @return Nacos 配置类型（yaml | json | xml | properties | html | toml | text）
+ */
+export function resolveConfigType(dataId: string, explicitType?: string): string {
+  if (explicitType && explicitType.trim()) {
+    return explicitType.trim().toLowerCase();
+  }
+
+  if (!dataId) {
+    return 'text';
+  }
+
+  const lastDot = dataId.lastIndexOf('.');
+  if (lastDot === -1 || lastDot === dataId.length - 1) {
+    return 'text';
+  }
+
+  const ext = dataId.slice(lastDot + 1).toLowerCase().trim();
+  return CONFIG_TYPE_MAP[ext] || 'text';
+}
+

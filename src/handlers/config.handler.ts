@@ -11,6 +11,7 @@ import type { NacosClient } from '../client/nacos.client.js';
 import { normalizeNamespaceId } from '../utils/normalizer.js';
 import { validateConfigSyntax } from '../utils/syntax.guard.js';
 import { sliceConfigContent } from '../utils/text.slice.js';
+import { resolveConfigType } from '../utils/mime.util.js';
 
 export interface GetConfigInput {
   dataId: string;
@@ -112,8 +113,10 @@ export class ConfigHandler {
     const group = input.group?.trim() || 'DEFAULT_GROUP';
     const tenant = normalizeNamespaceId(input.namespaceId);
 
+    const configType = resolveConfigType(dataId, input.type);
+
     // 1. 语法安全守卫：客户端前置拦截语法缺陷
-    const guard = validateConfigSyntax(input.content, input.type, dataId);
+    const guard = validateConfigSyntax(input.content, configType, dataId);
     if (!guard.valid) {
       throw new Error(guard.error);
     }
@@ -124,7 +127,7 @@ export class ConfigHandler {
       group,
       tenant,
       content: input.content,
-      type: input.type,
+      type: configType,
       desc: input.desc?.trim(),
       appName: input.appName?.trim(),
     });
@@ -134,7 +137,7 @@ export class ConfigHandler {
       `- **配置集 ID (Data ID)**: \`${dataId}\``,
       `- **配置分组 (Group)**: \`${group}\``,
       `- **命名空间 (Tenant)**: \`${tenant || 'public'}\``,
-      `- **格式类型 (Type)**: ${input.type || 'text'}`,
+      `- **格式类型 (Type)**: ${configType}`,
       `- **字符总数**: ${input.content.length}`,
     ].join('\n');
   }

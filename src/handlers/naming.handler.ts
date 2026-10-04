@@ -9,6 +9,7 @@
  */
 
 import type { NacosClient } from '../client/nacos.client.js';
+import { normalizeNamespaceId } from '../utils/normalizer.js';
 
 export interface ListServicesInput {
   groupName?: string;
@@ -80,20 +81,21 @@ export class NamingHandler {
     client: NacosClient,
     input: ListServicesInput = {}
   ): Promise<string> {
+    const tenant = normalizeNamespaceId(input.namespaceId);
     const result = await client.listServices({
       groupName: input.groupName,
-      namespaceId: input.namespaceId,
+      namespaceId: tenant,
       pageNo: input.pageNo,
       pageSize: input.pageSize,
     });
 
     if (result.doms.length === 0) {
-      return `当前命名空间/分组下暂无已注册的微服务。(命名空间: ${input.namespaceId || 'public'}, 分组: ${input.groupName || 'DEFAULT_GROUP'})`;
+      return `当前命名空间/分组下暂无已注册的微服务。(命名空间: ${tenant || 'public'}, 分组: ${input.groupName || 'DEFAULT_GROUP'})`;
     }
 
     const lines: string[] = [
       `### Nacos 微服务列表 (共 ${result.count} 个)`,
-      `- **命名空间 (Tenant)**: \`${input.namespaceId || 'public'}\``,
+      `- **命名空间 (Tenant)**: \`${tenant || 'public'}\``,
       `- **服务分组 (Group)**: \`${input.groupName || 'DEFAULT_GROUP'}\``,
       '',
       '| 序号 | 微服务名称 (Service Name) |',
@@ -118,10 +120,11 @@ export class NamingHandler {
     client: NacosClient,
     input: GetServiceInput
   ): Promise<string> {
+    const tenant = normalizeNamespaceId(input.namespaceId);
     const detail = await client.getService(
       input.serviceName.trim(),
       input.groupName,
-      input.namespaceId
+      tenant
     );
 
     const metadataStr =
@@ -132,7 +135,7 @@ export class NamingHandler {
     return [
       `### Nacos 微服务详情: \`${detail.name}\``,
       `- **所属分组 (Group)**: \`${detail.groupName || input.groupName || 'DEFAULT_GROUP'}\``,
-      `- **命名空间 (Tenant)**: \`${input.namespaceId || 'public'}\``,
+      `- **命名空间 (Tenant)**: \`${tenant || 'public'}\``,
       `- **保护阈值 (Protect Threshold)**: ${detail.protectThreshold}`,
       `- **集群配置数**: ${detail.clusters?.length ?? 0}`,
       `- **路由选择器 (Selector)**: ${detail.selector?.type || '无'}`,
@@ -151,10 +154,11 @@ export class NamingHandler {
     client: NacosClient,
     input: ListInstancesInput
   ): Promise<string> {
+    const tenant = normalizeNamespaceId(input.namespaceId);
     const result = await client.listInstances({
       serviceName: input.serviceName.trim(),
       groupName: input.groupName,
-      namespaceId: input.namespaceId,
+      namespaceId: tenant,
       healthyOnly: input.healthyOnly,
       clusters: input.clusters,
     });
@@ -203,6 +207,7 @@ export class NamingHandler {
     client: NacosClient,
     input: RegisterInstanceInput
   ): Promise<string> {
+    const tenant = normalizeNamespaceId(input.namespaceId);
     // 依据 ADR-0002 规范：默认采用持久化模式 (ephemeral=false)
     const isEphemeral = input.ephemeral === true;
 
@@ -211,7 +216,7 @@ export class NamingHandler {
       ip: input.ip.trim(),
       port: input.port,
       groupName: input.groupName,
-      namespaceId: input.namespaceId,
+      namespaceId: tenant,
       weight: input.weight,
       enabled: input.enabled,
       healthy: input.healthy,
@@ -234,7 +239,7 @@ export class NamingHandler {
       `- **健康状态**: ${healthyDesc}`,
       `- **所属集群**: \`${input.clusterName || 'DEFAULT'}\``,
       `- **服务分组**: \`${input.groupName || 'DEFAULT_GROUP'}\``,
-      `- **命名空间**: \`${input.namespaceId || 'public'}\``,
+      `- **命名空间**: \`${tenant || 'public'}\``,
     ].join('\n');
   }
 
@@ -249,12 +254,13 @@ export class NamingHandler {
     client: NacosClient,
     input: DeregisterInstanceInput
   ): Promise<string> {
+    const tenant = normalizeNamespaceId(input.namespaceId);
     await client.deregisterInstance({
       serviceName: input.serviceName.trim(),
       ip: input.ip.trim(),
       port: input.port,
       groupName: input.groupName,
-      namespaceId: input.namespaceId,
+      namespaceId: tenant,
       clusterName: input.clusterName,
       ephemeral: input.ephemeral,
     });
@@ -264,7 +270,7 @@ export class NamingHandler {
       `- **微服务名称**: \`${input.serviceName.trim()}\``,
       `- **实例地址**: \`${input.ip.trim()}:${input.port}\``,
       `- **服务分组**: \`${input.groupName || 'DEFAULT_GROUP'}\``,
-      `- **命名空间**: \`${input.namespaceId || 'public'}\``,
+      `- **命名空间**: \`${tenant || 'public'}\``,
       `- **所属集群**: \`${input.clusterName || 'DEFAULT'}\``,
     ].join('\n');
   }
@@ -280,12 +286,13 @@ export class NamingHandler {
     client: NacosClient,
     input: UpdateInstanceInput
   ): Promise<string> {
+    const tenant = normalizeNamespaceId(input.namespaceId);
     await client.updateInstance({
       serviceName: input.serviceName.trim(),
       ip: input.ip.trim(),
       port: input.port,
       groupName: input.groupName,
-      namespaceId: input.namespaceId,
+      namespaceId: tenant,
       weight: input.weight,
       enabled: input.enabled,
       clusterName: input.clusterName,
@@ -308,7 +315,7 @@ export class NamingHandler {
       `- **流量权重**: ${weightDesc}`,
       `- **在线状态**: ${enabledDesc}`,
       `- **服务分组**: \`${input.groupName || 'DEFAULT_GROUP'}\``,
-      `- **命名空间**: \`${input.namespaceId || 'public'}\``,
+      `- **命名空间**: \`${tenant || 'public'}\``,
       `- **所属集群**: \`${input.clusterName || 'DEFAULT'}\``,
     ].join('\n');
   }
