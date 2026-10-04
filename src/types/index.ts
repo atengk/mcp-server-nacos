@@ -116,4 +116,45 @@ export interface NacosConfigHistoryListResult {
   pageItems: NacosConfigHistoryItem[];
 }
 
+export interface NacosServiceDetail {
+  name: string;
+  groupName: string;
+  protectThreshold: number;
+  metadata?: Record<string, string>;
+  selector?: { type: string };
+  clusters?: unknown[];
+}
+
+export interface NacosInstance {
+  instanceId?: string;
+  ip: string;
+  port: number;
+  weight: number;
+  healthy: boolean;
+  enabled: boolean;
+  ephemeral: boolean;
+  clusterName: string;
+  serviceName?: string;
+  metadata?: Record<string, string>;
+}
+
+export interface NacosInstanceListResult {
+  name: string;
+  groupName: string;
+  clusters?: string;
+  checksum?: string;
+  lastRefTime?: number;
+  env?: string;
+  useSpecifiedURL?: boolean;
+  hosts: NacosInstance[];
+}
+
+export interface NacosServerNode {
+  ip: string;
+  port: number;
+  state: string;
+  extendInfo?: Record<string, unknown>;
+}
+
+
 

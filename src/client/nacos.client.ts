@@ -11,8 +11,12 @@ import type {
   NacosConfigHistoryItem,
   NacosConfigHistoryListResult,
   NacosConfigListResult,
+  NacosInstance,
+  NacosInstanceListResult,
   NacosNamespace,
   NacosServerConfig,
+  NacosServerNode,
+  NacosServiceDetail,
 } from '../types/index.js';
 import type { HttpClient } from './http.client.js';
 
@@ -420,6 +424,237 @@ export class NacosClient {
     });
 
     return snapshot;
+  }
+
+  /**
+   * 分页查询微服务列表
+   *
+   * @param params 查询条件
+   * @return 微服务名称集合与总数
+   */
+  public async listServices(params: {
+    groupName?: string;
+    namespaceId?: string;
+    pageNo?: number;
+    pageSize?: number;
+  }): Promise<{ count: number; doms: string[] }> {
+    const response = await this.httpClient.get<{ count?: number; doms?: string[] }>(
+      '/v1/ns/service/list',
+      {
+        params: {
+          groupName: params.groupName || 'DEFAULT_GROUP',
+          namespaceId: params.namespaceId ?? '',
+          pageNo: params.pageNo || 1,
+          pageSize: params.pageSize || 20,
+        },
+      }
+    );
+
+    return {
+      count: response.data?.count ?? (response.data?.doms?.length ?? 0),
+      doms: Array.isArray(response.data?.doms) ? response.data.doms : [],
+    };
+  }
+
+  /**
+   * 获取微服务详细信息与保护阈值
+   *
+   * @param serviceName 服务名称
+   * @param groupName 分组名称（默认 DEFAULT_GROUP）
+   * @param namespaceId 命名空间 ID（默认公共空间）
+   * @return 微服务详细元数据与配置
+   */
+  public async getService(
+    serviceName: string,
+    groupName = 'DEFAULT_GROUP',
+    namespaceId = ''
+  ): Promise<NacosServiceDetail> {
+    try {
+      const response = await this.httpClient.get<NacosServiceDetail>('/v1/ns/service', {
+        params: {
+          serviceName,
+          groupName,
+          namespaceId,
+        },
+      });
+
+      return response.data;
+    } catch (err: any) {
+      if (err?.response?.status === 404 || err?.status === 404) {
+        throw new Error(
+          `微服务不存在: serviceName=${serviceName}, group=${groupName}, namespaceId=${namespaceId || 'public'}`
+        );
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * 查询微服务下的注册实例列表，支持按健康状态过滤
+   *
+   * @param params 过滤与查询条件
+   * @return 实例集合列表
+   */
+  public async listInstances(params: {
+    serviceName: string;
+    groupName?: string;
+    namespaceId?: string;
+    healthyOnly?: boolean;
+    clusters?: string;
+  }): Promise<NacosInstanceListResult> {
+    const response = await this.httpClient.get<NacosInstanceListResult>(
+      '/v1/ns/instance/list',
+      {
+        params: {
+          serviceName: params.serviceName,
+          groupName: params.groupName || 'DEFAULT_GROUP',
+          namespaceId: params.namespaceId ?? '',
+          healthyOnly: params.healthyOnly ?? false,
+          clusters: params.clusters,
+        },
+      }
+    );
+
+    const payload = response.data;
+    return {
+      name: payload?.name || params.serviceName,
+      groupName: payload?.groupName || params.groupName || 'DEFAULT_GROUP',
+      hosts: Array.isArray(payload?.hosts) ? payload.hosts : [],
+    };
+  }
+
+  /**
+   * 向微服务注册实例（默认持久化模式，遵循 ADR-0002）
+   *
+   * @param params 实例注册参数
+   * @return 是否注册成功
+   */
+  public async registerInstance(params: {
+    serviceName: string;
+    ip: string;
+    port: number;
+    groupName?: string;
+    namespaceId?: string;
+    weight?: number;
+    enabled?: boolean;
+    healthy?: boolean;
+    ephemeral?: boolean;
+    clusterName?: string;
+    metadata?: Record<string, string>;
+  }): Promise<boolean> {
+    const formParams = new URLSearchParams();
+    formParams.append('serviceName', params.serviceName);
+    formParams.append('groupName', params.groupName || 'DEFAULT_GROUP');
+    formParams.append('namespaceId', params.namespaceId ?? '');
+    formParams.append('ip', params.ip);
+    formParams.append('port', String(params.port));
+    formParams.append('weight', String(params.weight ?? 1.0));
+    formParams.append('enabled', String(params.enabled ?? true));
+    formParams.append('healthy', String(params.healthy ?? true));
+    // ADR-0002: 默认持久化实例 (ephemeral: false)
+    formParams.append('ephemeral', String(params.ephemeral ?? false));
+    formParams.append('clusterName', params.clusterName || 'DEFAULT');
+
+    if (params.metadata) {
+      formParams.append('metadata', JSON.stringify(params.metadata));
+    }
+
+    await this.httpClient.post('/v1/ns/instance', formParams.toString(), {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+    });
+
+    return true;
+  }
+
+  /**
+   * 注销指定的服务实例节点
+   *
+   * @param params 实例定位参数
+   * @return 是否注销成功
+   */
+  public async deregisterInstance(params: {
+    serviceName: string;
+    ip: string;
+    port: number;
+    groupName?: string;
+    namespaceId?: string;
+    clusterName?: string;
+    ephemeral?: boolean;
+  }): Promise<boolean> {
+    await this.httpClient.delete('/v1/ns/instance', {
+      params: {
+        serviceName: params.serviceName,
+        groupName: params.groupName || 'DEFAULT_GROUP',
+        namespaceId: params.namespaceId ?? '',
+        ip: params.ip,
+        port: params.port,
+        clusterName: params.clusterName || 'DEFAULT',
+        ephemeral: params.ephemeral ?? false,
+      },
+    });
+
+    return true;
+  }
+
+  /**
+   * 动态更新实例状态（权重调节、上线/隔离下线、元数据变更）
+   *
+   * @param params 实例更新参数
+   * @return 是否修改成功
+   */
+  public async updateInstance(params: {
+    serviceName: string;
+    ip: string;
+    port: number;
+    groupName?: string;
+    namespaceId?: string;
+    weight?: number;
+    enabled?: boolean;
+    clusterName?: string;
+    metadata?: Record<string, string>;
+    ephemeral?: boolean;
+  }): Promise<boolean> {
+    const formParams = new URLSearchParams();
+    formParams.append('serviceName', params.serviceName);
+    formParams.append('groupName', params.groupName || 'DEFAULT_GROUP');
+    formParams.append('namespaceId', params.namespaceId ?? '');
+    formParams.append('ip', params.ip);
+    formParams.append('port', String(params.port));
+    formParams.append('clusterName', params.clusterName || 'DEFAULT');
+    formParams.append('ephemeral', String(params.ephemeral ?? false));
+
+    if (params.weight !== undefined) {
+      formParams.append('weight', String(params.weight));
+    }
+    if (params.enabled !== undefined) {
+      formParams.append('enabled', String(params.enabled));
+    }
+    if (params.metadata) {
+      formParams.append('metadata', JSON.stringify(params.metadata));
+    }
+
+    await this.httpClient.put('/v1/ns/instance', formParams.toString(), {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+    });
+
+    return true;
+  }
+
+  /**
+   * 探测 Nacos 集群节点当前运行状态与健康度
+   *
+   * @return 集群节点健康状态列表
+   */
+  public async getServerStatus(): Promise<NacosServerNode[]> {
+    const response = await this.httpClient.get<{ servers?: NacosServerNode[] }>(
+      '/v1/ns/operator/servers'
+    );
+
+    return Array.isArray(response.data?.servers) ? response.data.servers : [];
   }
 }
 

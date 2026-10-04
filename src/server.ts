@@ -8,7 +8,11 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NacosServerConfig } from './types/index.js';
 import type { NacosClient } from './client/nacos.client.js';
-import { registerConfigTools, registerNamespaceTools } from './mcp/tools.registry.js';
+import {
+  registerConfigTools,
+  registerNamespaceTools,
+  registerNamingTools,
+} from './mcp/tools.registry.js';
 
 /**
  * 创建并配置 MCP Server 实例
@@ -42,6 +46,9 @@ export function createMcpServer(
 
   // 2. 注册配置中心原子工具
   registerConfigTools(server, nacosClient);
+
+  // 3. 注册服务发现与实例动态治理原子工具
+  registerNamingTools(server, nacosClient);
 
   return server;
 }

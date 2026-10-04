@@ -42,6 +42,30 @@ export interface MockHistoryItem {
   lastModifiedTime: string;
 }
 
+export interface MockServiceItem {
+  name: string;
+  groupName: string;
+  namespaceId: string;
+  protectThreshold: number;
+  metadata?: Record<string, string>;
+  selector?: { type: string };
+}
+
+export interface MockInstanceItem {
+  instanceId: string;
+  serviceName: string;
+  groupName: string;
+  namespaceId: string;
+  ip: string;
+  port: number;
+  weight: number;
+  healthy: boolean;
+  enabled: boolean;
+  ephemeral: boolean;
+  clusterName: string;
+  metadata?: Record<string, string>;
+}
+
 export class MockNacosServer {
   public namespaces: NacosNamespace[] = [
     {
@@ -121,6 +145,54 @@ export class MockNacosServer {
       opType: 'U',
       createdTime: '2026-10-04 11:00:00',
       lastModifiedTime: '2026-10-04 11:00:00',
+    },
+  ];
+
+  public services: MockServiceItem[] = [
+    {
+      name: 'user-service',
+      groupName: 'DEFAULT_GROUP',
+      namespaceId: '',
+      protectThreshold: 0.6,
+      metadata: { 'preserved.register.source': 'SPRING_CLOUD' },
+    },
+    {
+      name: 'order-service',
+      groupName: 'DEFAULT_GROUP',
+      namespaceId: '',
+      protectThreshold: 0.0,
+      metadata: {},
+    },
+  ];
+
+  public instances: MockInstanceItem[] = [
+    {
+      instanceId: '192.168.1.10#8080#DEFAULT#DEFAULT_GROUP@@user-service',
+      serviceName: 'user-service',
+      groupName: 'DEFAULT_GROUP',
+      namespaceId: '',
+      ip: '192.168.1.10',
+      port: 8080,
+      weight: 1.0,
+      healthy: true,
+      enabled: true,
+      ephemeral: false,
+      clusterName: 'DEFAULT',
+      metadata: { version: '1.0.0' },
+    },
+    {
+      instanceId: '192.168.1.11#8080#DEFAULT#DEFAULT_GROUP@@user-service',
+      serviceName: 'user-service',
+      groupName: 'DEFAULT_GROUP',
+      namespaceId: '',
+      ip: '192.168.1.11',
+      port: 8080,
+      weight: 0.5,
+      healthy: false,
+      enabled: true,
+      ephemeral: false,
+      clusterName: 'DEFAULT',
+      metadata: { version: '1.0.0' },
     },
   ];
 
@@ -437,6 +509,224 @@ export class MockNacosServer {
             pageNumber: pageNo,
             pagesAvailable: Math.ceil(filtered.length / pageSize) || 1,
             pageItems,
+          },
+        };
+      }
+
+      // 10. 模拟服务列表: GET /v1/ns/service/list
+      if (config.method?.toLowerCase() === 'get' && url.includes('/v1/ns/service/list')) {
+        const groupName = config.params?.groupName || 'DEFAULT_GROUP';
+        const namespaceId = config.params?.namespaceId ?? '';
+
+        const filtered = this.services.filter(
+          (s) => s.groupName === groupName && s.namespaceId === namespaceId
+        );
+
+        const pageNo = Number(config.params?.pageNo) || 1;
+        const pageSize = Number(config.params?.pageSize) || 20;
+        const startIndex = (pageNo - 1) * pageSize;
+        const pageItems = filtered.slice(startIndex, startIndex + pageSize);
+
+        return {
+          status: 200,
+          statusText: 'OK',
+          headers: {},
+          config,
+          data: {
+            count: filtered.length,
+            doms: pageItems.map((s) => s.name),
+          },
+        };
+      }
+
+      // 11. 模拟服务详情: GET /v1/ns/service
+      if (config.method?.toLowerCase() === 'get' && url.includes('/v1/ns/service') && !url.includes('/v1/ns/service/list')) {
+        const serviceName = config.params?.serviceName;
+        const groupName = config.params?.groupName || 'DEFAULT_GROUP';
+        const namespaceId = config.params?.namespaceId ?? '';
+
+        const found = this.services.find(
+          (s) => s.name === serviceName && s.groupName === groupName && s.namespaceId === namespaceId
+        );
+
+        if (found) {
+          return {
+            status: 200,
+            statusText: 'OK',
+            headers: {},
+            config,
+            data: {
+              name: found.name,
+              groupName: found.groupName,
+              protectThreshold: found.protectThreshold,
+              metadata: found.metadata || {},
+              selector: found.selector || { type: 'none' },
+              clusters: [],
+            },
+          };
+        }
+
+        const err = new Error('service not found') as any;
+        err.response = { status: 404, statusText: 'Not Found', config, data: 'service not found' };
+        err.config = config;
+        err.isAxiosError = true;
+        throw err;
+      }
+
+      // 12. 模拟实例列表查询: GET /v1/ns/instance/list
+      if (config.method?.toLowerCase() === 'get' && url.includes('/v1/ns/instance/list')) {
+        const serviceName = config.params?.serviceName;
+        const groupName = config.params?.groupName || 'DEFAULT_GROUP';
+        const namespaceId = config.params?.namespaceId ?? '';
+        const healthyOnly = String(config.params?.healthyOnly) === 'true';
+
+        let list = this.instances.filter(
+          (i) => i.serviceName === serviceName && i.groupName === groupName && i.namespaceId === namespaceId
+        );
+
+        if (healthyOnly) {
+          list = list.filter((i) => i.healthy);
+        }
+
+        return {
+          status: 200,
+          statusText: 'OK',
+          headers: {},
+          config,
+          data: {
+            name: `${groupName}@@${serviceName}`,
+            groupName,
+            clusters: '',
+            checksum: 'mock-sum',
+            lastRefTime: Date.now(),
+            env: '',
+            useSpecifiedURL: false,
+            hosts: list,
+          },
+        };
+      }
+
+      // 13. 模拟实例注册: POST /v1/ns/instance
+      if (config.method?.toLowerCase() === 'post' && url.includes('/v1/ns/instance')) {
+        const params = new URLSearchParams(typeof config.data === 'string' ? config.data : '');
+        const serviceName = params.get('serviceName') || config.params?.serviceName || '';
+        const groupName = params.get('groupName') || config.params?.groupName || 'DEFAULT_GROUP';
+        const namespaceId = params.get('namespaceId') ?? config.params?.namespaceId ?? '';
+        const ip = params.get('ip') || config.params?.ip || '';
+        const port = Number(params.get('port') || config.params?.port || 0);
+        const weight = Number(params.get('weight') ?? config.params?.weight ?? 1.0);
+        const enabled = params.get('enabled') !== 'false' && config.params?.enabled !== false;
+        const healthy = params.get('healthy') !== 'false' && config.params?.healthy !== false;
+        // 关键断言点：ADR-0002 默认持久化 (ephemeral=false)
+        const ephemeralRaw = params.get('ephemeral') ?? config.params?.ephemeral;
+        const ephemeral = ephemeralRaw === 'true' || ephemeralRaw === true;
+        const clusterName = params.get('clusterName') || config.params?.clusterName || 'DEFAULT';
+
+        const instanceId = `${ip}#${port}#${clusterName}#${groupName}@@${serviceName}`;
+        this.instances.push({
+          instanceId,
+          serviceName,
+          groupName,
+          namespaceId,
+          ip,
+          port,
+          weight,
+          healthy,
+          enabled,
+          ephemeral,
+          clusterName,
+          metadata: {},
+        });
+
+        return {
+          status: 200,
+          statusText: 'OK',
+          headers: {},
+          config,
+          data: 'ok',
+        };
+      }
+
+      // 14. 模拟实例注销: DELETE /v1/ns/instance
+      if (config.method?.toLowerCase() === 'delete' && url.includes('/v1/ns/instance')) {
+        const serviceName = config.params?.serviceName;
+        const groupName = config.params?.groupName || 'DEFAULT_GROUP';
+        const namespaceId = config.params?.namespaceId ?? '';
+        const ip = config.params?.ip;
+        const port = Number(config.params?.port);
+
+        this.instances = this.instances.filter(
+          (i) => !(i.serviceName === serviceName && i.groupName === groupName && i.namespaceId === namespaceId && i.ip === ip && i.port === port)
+        );
+
+        return {
+          status: 200,
+          statusText: 'OK',
+          headers: {},
+          config,
+          data: 'ok',
+        };
+      }
+
+      // 15. 模拟实例修改 (权重/上下线): PUT /v1/ns/instance
+      if (config.method?.toLowerCase() === 'put' && url.includes('/v1/ns/instance')) {
+        const params = new URLSearchParams(typeof config.data === 'string' ? config.data : '');
+        const serviceName = params.get('serviceName') || config.params?.serviceName;
+        const groupName = params.get('groupName') || config.params?.groupName || 'DEFAULT_GROUP';
+        const namespaceId = params.get('namespaceId') ?? config.params?.namespaceId ?? '';
+        const ip = params.get('ip') || config.params?.ip;
+        const port = Number(params.get('port') || config.params?.port);
+
+        const found = this.instances.find(
+          (i) => i.serviceName === serviceName && i.groupName === groupName && i.namespaceId === namespaceId && i.ip === ip && i.port === port
+        );
+
+        if (found) {
+          const rawWeight = params.get('weight') ?? config.params?.weight;
+          if (rawWeight !== undefined && rawWeight !== null) {
+            found.weight = Number(rawWeight);
+          }
+          const rawEnabled = params.get('enabled') ?? config.params?.enabled;
+          if (rawEnabled !== undefined && rawEnabled !== null) {
+            found.enabled = String(rawEnabled) === 'true' || rawEnabled === true;
+          }
+
+          return {
+            status: 200,
+            statusText: 'OK',
+            headers: {},
+            config,
+            data: 'ok',
+          };
+        }
+
+        const err = new Error('instance not found') as any;
+        err.response = { status: 404, statusText: 'Not Found', config, data: 'instance not found' };
+        err.config = config;
+        err.isAxiosError = true;
+        throw err;
+      }
+
+      // 16. 模拟集群节点状态探针: GET /v1/ns/operator/servers
+      if (config.method?.toLowerCase() === 'get' && url.includes('/v1/ns/operator/servers')) {
+        return {
+          status: 200,
+          statusText: 'OK',
+          headers: {},
+          config,
+          data: {
+            servers: [
+              {
+                ip: '127.0.0.1',
+                port: 8848,
+                state: 'UP',
+                extendInfo: {
+                  lastBeatTimeStamp: Date.now(),
+                  version: '3.0.0',
+                  standaloneMode: true,
+                },
+              },
+            ],
           },
         };
       }
