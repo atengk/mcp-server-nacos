@@ -1,0 +1,25 @@
+services:
+  mcp-server-nacos:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/atengk/mcp-server-nacos:latest
+    container_name: mcp-server-nacos
+    restart: unless-stopped
+    # 预留 HTTP / SSE 端口映射（支持远程 Agent、Dify 或多智能体平台接入）
+    ports:
+      - "${MCP_PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - MCP_PORT=3000
+      - MCP_TRANSPORT=${MCP_TRANSPORT:-sse}
+      # Nacos 核心配置（默认通过 host.docker.internal 连通宿主机或外部已存在的 Nacos）
+      - MCP_NACOS_SERVER_URL=${MCP_NACOS_SERVER_URL:-http://host.docker.internal:8848/nacos}
+      - MCP_NACOS_CONSOLE_URL=${MCP_NACOS_CONSOLE_URL:-http://host.docker.internal:8080}
+      - MCP_NACOS_USERNAME=${MCP_NACOS_USERNAME:-nacos}
+      - MCP_NACOS_PASSWORD=${MCP_NACOS_PASSWORD:-nacos}
+      - MCP_NACOS_NAMESPACE_ID=${MCP_NACOS_NAMESPACE_ID:-}
+      - MCP_NACOS_REQUEST_TIMEOUT=${MCP_NACOS_REQUEST_TIMEOUT:-15000}
+    # 允许容器在 Linux / macOS / Windows 环境下通过 host.docker.internal 寻址宿主机网络
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
