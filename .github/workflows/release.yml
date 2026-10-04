@@ -80,6 +80,7 @@ jobs:
   publish-npm:
     name: 发布至 npm 官方仓库
     needs: github-release
+    if: ${{ secrets.NPM_TOKEN != '' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
