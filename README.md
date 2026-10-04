@@ -38,10 +38,11 @@
 ## ✨ 核心特性
 
 - 🎯 **Nacos 3.0 深度适配**：对齐 Nacos 3.0 Server (8848) 与 Console (8080) 解耦架构，无缝应对公网非对称 NAT 端口映射（如 58848/57206）；
-- 🛠️ **全功能 CRUD 原子工具集 (15+ Tools)**：覆盖配置发布/回滚/检索、命名空间管理、微服务健康度分析、实例权重与上下线控制；
+- 🛠️ **全功能 CRUD 原子工具集 (16 Tools)**：覆盖配置发布/回滚/检索、命名空间管理、微服务健康度分析、实例权重与上下线控制；
+- 🛡️ **大模型安全防御守卫**：客户端静默归一化命名空间入参、配置发布前置 JSON/YAML 语法强校验、长文本安全截断与按行切片读取；
 - 📦 **配置资源化挂载 (MCP Resources)**：支持 `nacos://config/{tenant}/{group}/{dataId}` 资源协议，让 Agent 像读取本地文件一样直接检索动态配置；
 - 💡 **开箱即用运维模版 (MCP Prompts)**：内置微服务健康全景体检（`nacos_service_inspection`）与配置版本漂移比对（`nacos_config_drift_check`）；
-- 🛡️ **自愈式会话认证 (Self-Healing Auth)**：针对开启鉴权的 Nacos 实例提供 Token 提前静默续期与 401 拦截重试机制，长会话零中断；
+- 🔒 **自愈式会话认证 (Self-Healing Auth)**：针对开启鉴权的 Nacos 实例提供 Token 提前静默续期与 401 拦截重试机制，长会话零中断；
 - 🐳 **独立容器化与 SSE 预留**：内置 `docker-compose.yml`，暴露 3000 端口，开箱支持远程 Agent / Dify 等多智能体平台接入；
 - ⚡ **超轻量极速启动**：基于 Node.js 运行时与 `tsup` 预编译打包，本地 Stdio 进程毫秒级冷启动，内存占用 < 50MB。
 
@@ -71,6 +72,20 @@
 |                (MCP 保持纯净 HTTP 通信，规避 NAT 端口偏移计算失效)              |
 +-------------------------------------------------------------------------+
 ```
+
+---
+
+## 🛡️ 大模型安全防御守卫机制 (AI Safety Guardrails)
+
+为防止大模型幻觉与不当参数引发生产事故，本项目在 MCP 客户端边界内置了三重刚性守卫：
+
+1. **命名空间智能静默归一化 (Silent Normalization)**：
+   - 识别大模型常混淆的 `undefined`、`"public"`、`"PUBLIC"` 输入，并在客户端层统一静默转换为底层协议所需的 `""`（空字符串）或配置环境变量的默认空间，确保接口请求 100% 成功。
+2. **发布前置语法安全守卫 (Syntax Guardrails)**：
+   - 在向 Nacos 提交配置变更前，若声明了 `type: "json"` 或 `type: "yaml"`，客户端自动在本地执行解析校验。
+   - 一旦发现括号缺失、缩进错误等格式缺陷，立即就地阻断请求，并向大模型返回具体的行号与修复指引，杜绝脏配置污染存储导致下游服务崩溃。
+3. **超长配置按行切片防护 (Token Bloat Protection)**：
+   - 当微服务配置超过 30,000 字符（约 800 行）时，自动返回前 200 行内容摘要与全文字符统计，并指导大模型传入 `startLine` 与 `endLine` 进行按需切片阅读，保护模型上下文窗口容量。
 
 ---
 
@@ -158,7 +173,7 @@ docker compose logs -f
 
 ## 🧰 MCP 协议契约详述
 
-### 1. MCP Tools (原子工具集)
+### 1. MCP Tools (16 个原子工具集)
 
 #### 命名空间域 (Namespace)
 - `nacos_list_namespaces`: 查询所有命名空间列表及元数据。
@@ -166,19 +181,20 @@ docker compose logs -f
 - `nacos_delete_namespace`: 删除指定命名空间。
 
 #### 配置管理域 (Config)
-- `nacos_get_config`: 获取指定配置项内容（`dataId`, `group`, `namespaceId`）。
-- `nacos_publish_config`: 创建或更新配置（`dataId`, `group`, `content`, `type`, `desc`）。
+- `nacos_get_config`: 获取指定配置项内容（支持大文本自动截断与 `startLine`/`endLine` 切片）。
+- `nacos_publish_config`: 创建或更新配置（内置客户端 JSON/YAML 语法强守卫）。
 - `nacos_delete_config`: 删除指定配置。
 - `nacos_list_configs`: 分页模糊搜索配置列表。
 - `nacos_get_config_history`: 查询指定配置的历史修订版本列表（用于审查和回滚）。
+- `nacos_rollback_config`: **[专用回滚]** 依据 `historyId` 原子化回滚至指定历史版本，杜绝长文本搬运截断。
 
 #### 服务发现与实例治理域 (Naming/Discovery)
 - `nacos_list_services`: 分页查询微服务列表。
 - `nacos_get_service`: 获取微服务元数据与保护阈值。
 - `nacos_list_instances`: 查询服务下的注册实例（支持过滤健康状态）。
-- `nacos_register_instance`: 手动向服务注册实例（`ip`, `port`, `weight`, `metadata`）。
+- `nacos_register_instance`: 手动向服务注册实例（默认持久化实例，支持显式声明临时实例）。
 - `nacos_deregister_instance`: 注销指定服务实例。
-- `nacos_update_instance`: 动态修改实例运行状态（上下线、权重比率调节）。
+- `nacos_update_instance`: 动态修改实例运行状态（上下线开关、权重比率调节与元数据打标）。
 
 #### 集群运维域 (Ops)
 - `nacos_get_server_status`: 探测 Nacos 集群节点当前运行状态与健康度。
@@ -190,6 +206,25 @@ docker compose logs -f
 ### 3. MCP Prompts (预置运维模版)
 - **`nacos_service_inspection`**：服务全景体检，自动扫描无实例空服务、健康异常与被隔离实例。
 - **`nacos_config_drift_check`**：配置版本漂移比对，自动生成当前配置与上一历史版本的 Unified Git Diff。
+
+---
+
+## 🗺️ 架构与工程决策导航 (Architecture & Decisions)
+
+本项目严格遵循高内聚领域驱动与工程架构决策规范：
+
+- 📚 **统一业务语言词典**：[CONTEXT.md](./CONTEXT.md)（严格界定命名空间、配置项、实例权重、测试接缝等标准定义）
+- 📐 **架构决策记录 (ADR)**：
+  - [ADR-0001: 采用 HTTP OpenAPI 全面替代客户端 gRPC 协议](./docs/adr/0001-http-openapi-over-grpc.md)
+  - [ADR-0002: 实例注册默认采用持久化模式 (Persistent Instance)](./docs/adr/0002-persistent-instance-as-default.md)
+- 📋 **GitHub 任务看板与规格书**：[GitHub Issues 看板](https://github.com/atengk/mcp-server-nacos/issues)
+  - [Issue #1 (Spec 规格说明书)](https://github.com/atengk/mcp-server-nacos/issues/1)
+  - [Issue #2 (Ticket 1: 核心底座与命名空间切片)](https://github.com/atengk/mcp-server-nacos/issues/2)
+  - [Issue #3 (Ticket 2: 配置核心与语法守卫切片)](https://github.com/atengk/mcp-server-nacos/issues/3)
+  - [Issue #4 (Ticket 3: 配置历史与原子回滚切片)](https://github.com/atengk/mcp-server-nacos/issues/4)
+  - [Issue #5 (Ticket 4: 服务发现与实例治理切片)](https://github.com/atengk/mcp-server-nacos/issues/5)
+  - [Issue #6 (Ticket 5: MCP Resources 与 Prompts 切片)](https://github.com/atengk/mcp-server-nacos/issues/6)
+  - [Issue #7 (Ticket 6: 双模传输与 Compose 全景联调)](https://github.com/atengk/mcp-server-nacos/issues/7)
 
 ---
 
