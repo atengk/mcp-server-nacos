@@ -1,6 +1,6 @@
 {
   "name": "@atengk/mcp-server-nacos",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Model Context Protocol (MCP) server for Nacos 3.0",
   "type": "module",
   "main": "./dist/index.js",

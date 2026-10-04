@@ -16,6 +16,7 @@ import { createHttpClient } from './client/http.client.js';
 import { NacosClient } from './client/nacos.client.js';
 import { createMcpServer } from './server.js';
 import { startSseServer, type SseServerInstance } from './transport/sse.server.js';
+import { VERSION } from './version.js';
 import type { RawCliOptions } from './types/index.js';
 
 // 1. 加载本地 .env 文件环境配置
@@ -26,7 +27,7 @@ const program = new Command();
 program
   .name('mcp-server-nacos')
   .description('Model Context Protocol (MCP) server for Nacos 3.0')
-  .version('0.1.0')
+  .version(VERSION)
   .option('--server-url <url>', 'Nacos 核心 OpenAPI 地址（如 http://127.0.0.1:8848/nacos）')
   .option('--console-url <url>', 'Nacos 控制台地址（如 http://127.0.0.1:8080）')
   .option('--server-addr <addr>', 'Nacos 简写地址（如 127.0.0.1:8848）')

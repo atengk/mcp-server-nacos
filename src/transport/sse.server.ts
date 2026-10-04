@@ -15,6 +15,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NacosServerConfig } from '../types/index.js';
 import type { NacosClient } from '../client/nacos.client.js';
 import { createMcpServer } from '../server.js';
+import { VERSION } from '../version.js';
 
 export interface SseServerInstance {
   server: http.Server;
@@ -79,7 +80,7 @@ export async function startSseServer(
           JSON.stringify({
             status: 'UP',
             service: 'mcp-server-nacos',
-            version: '0.1.0',
+            version: VERSION,
             transport: 'sse',
             activeSessions: sessions.size,
             nacosServer: config.serverUrl,

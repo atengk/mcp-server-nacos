@@ -1,7 +1,7 @@
 # MCP Server for Nacos 3.0 (mcp-server-nacos)
 
 <p align="center">
-  <strong>基于 Nacos 3.0 控制面与 OpenAPI 打造的企业级 Model Context Protocol (MCP) 服务端</strong>
+  <strong>基于 Nacos 3.0 控制面与 OpenAPI 打造的企业级 Model Context Protocol (MCP) 服务端 (v1.0.0 正式版 · Production Ready)</strong>
 </p>
 
 <p align="center">

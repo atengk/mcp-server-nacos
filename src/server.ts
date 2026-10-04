@@ -15,6 +15,7 @@ import {
 } from './mcp/tools.registry.js';
 import { registerNacosResources } from './mcp/resources.registry.js';
 import { registerNacosPrompts } from './mcp/prompts.registry.js';
+import { VERSION } from './version.js';
 
 /**
  * 创建并配置 MCP Server 实例
@@ -32,7 +33,7 @@ export function createMcpServer(
   const server = new McpServer(
     {
       name: 'mcp-server-nacos',
-      version: '0.1.0',
+      version: VERSION,
     },
     {
       capabilities: {
