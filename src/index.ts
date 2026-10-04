@@ -15,6 +15,7 @@ import { AuthManager } from './client/auth.manager.js';
 import { createHttpClient } from './client/http.client.js';
 import { NacosClient } from './client/nacos.client.js';
 import { createMcpServer } from './server.js';
+import { startSseServer, type SseServerInstance } from './transport/sse.server.js';
 import type { RawCliOptions } from './types/index.js';
 
 // 1. 加载本地 .env 文件环境配置
@@ -36,36 +37,45 @@ program
   .option('--port <port>', '网络服务端口')
   .option('--transport <mode>', '传输层协议模式 (stdio | sse)', 'stdio')
   .action(async (options: RawCliOptions) => {
+    let sseApp: SseServerInstance | null = null;
+    let authManager: AuthManager | null = null;
+    let server: ReturnType<typeof createMcpServer> | null = null;
+
     try {
       // 2. 解析与强类型校验配置
       const config = parseConfig(process.env, options);
 
       // 3. 实例化认证中心、HTTP 客户端与 Nacos 客户端门面
-      const authManager = new AuthManager(config);
+      authManager = new AuthManager(config);
       const httpClient = createHttpClient(config, authManager);
       const nacosClient = new NacosClient(config, httpClient);
 
-      // 4. 装配 MCP 服务端与各领域工具
-      const server = createMcpServer(config, nacosClient);
-
-      // 5. 传输层适配与启动
+      // 4. 传输层适配与启动
       if (config.transport === 'stdio') {
+        server = createMcpServer(config, nacosClient);
         const transport = new StdioServerTransport();
         await server.connect(transport);
         console.error(
           `[mcp-server-nacos] 服务已通过 Stdio 协议成功启动，对接 Nacos 控制面: ${config.serverUrl}`
         );
       } else {
+        sseApp = await startSseServer(config, nacosClient);
         console.error(
-          `[mcp-server-nacos] 暂未实现独立 SSE HTTP 监听服务（将在 Issue #7 交付），当前请使用 stdio 模式。`
+          `[mcp-server-nacos] 服务已通过 SSE 协议成功启动，监听端口: ${sseApp.port}，接入端点: http://0.0.0.0:${sseApp.port}/sse`
         );
-        process.exit(1);
       }
 
-      // 6. 优雅停机信号捕获
+      // 5. 优雅停机信号捕获
       const shutdown = async (): Promise<void> => {
-        authManager.destroy();
-        await server.close();
+        if (sseApp) {
+          await sseApp.close();
+        }
+        if (server) {
+          await server.close();
+        }
+        if (authManager) {
+          authManager.destroy();
+        }
         process.exit(0);
       };
 
